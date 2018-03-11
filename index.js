@@ -114,7 +114,7 @@ router.get('/logs/rethinkdb/loglevelstats', async ctx => {
     ctx.body = response;
 });
 
-// HTTP GET /logs/rethinkdb/loglevelstats?min=etc&max=etc to get stats of loglevels on daily aggregated basic
+// HTTP GET /logs/rethinkdb/timestats?min=etc&max=etc to get stats of response duration on ranges
 router.get('/logs/rethinkdb/timestats', async ctx => {
 
     const {min, max} = ctx.query;
@@ -240,6 +240,44 @@ router.get('/logs/cratedb', async ctx => {
 
     ctx.status = 200;
     ctx.body = entries.json;
+});
+
+let topmsData = [];
+
+r.table("logs")
+    .orderBy({index: r.desc("ms")})
+    .limit(50)
+    .run()
+    .then(function (data) {
+        topmsData = data;
+    })
+    .error(function (err) {
+        console.log(err);
+    });
+
+r.table("logs")
+    .orderBy({index: r.asc("ms")})
+    .limit(50)
+    .changes()
+    .run()
+    .then(function (data) {
+        let toRemove = data["old_val"];
+        let toAdd = data["new_val"];
+        topmsData.forEach(function (data, index) {
+            if (data["id"] === toRemove["id"]) {
+                topmsData.slice(index, 1);
+            }
+        });
+        topmsData.push(toAdd)
+    })
+    .error(function (err) {
+        console.log(err);
+    });
+
+// HTTP GET /logs/rethinkdb?min=etc&max=etc to get logs between dates
+router.get('/logs/worstcalls', async ctx => {
+    ctx.status = 200;
+    ctx.body = topmsData;
 });
 
 // Use router middleware
