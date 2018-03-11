@@ -27,7 +27,9 @@ nconf
         rethink_database: 'hackathon',
         rethink_port: 28015,
         crate_port: 4200,
-        app_port: 8080
+        app_port: 8080,
+	rethink_host: 'databases-internal.hackathon.venom360.com',
+        crate_host: 'databases-internal.hackathon.venom360.com'
     })
     .required([
         'rethink_database',
@@ -54,6 +56,51 @@ const app = new Koa();
 const router = new Router();
 
 app.use(logger());
+
+// HTTP GET /logs/rethinkdb/loglevel?min=etc&max=etc&logtype=etc to get logs of a certain type between dates
+router.get('/logs/rethinkdb/loglevel', async ctx => {
+
+    const {min, max, logtype} = ctx.query;
+    let entries;
+
+    const logLevels = {
+        'fatal': 60,
+        'error': 50,
+        'warn': 40,
+        'info': 30,
+        'debug': 20,
+        'trace': 10
+    };
+
+    if (!logtype || logLevels[logtype] === undefined) {
+        ctx.throw(400, 'Must specify logtype as (fatal, error, warn, info, debug, trace)');
+    }
+
+    if (min && max) {
+        const minDate = moment.utc(min, moment.ISO_8601);
+        const maxDate = moment.utc(max, moment.ISO_8601);
+
+        if (!minDate.isValid() || !maxDate.isValid())
+            ctx.throw(400, 'Min and max must be ISO 8601 date strings');
+        else {
+            entries = await r
+                .table('logs')
+                .between(minDate.toDate(), maxDate.toDate(), {index: 'time'})
+		.limit(max_limit)
+                .filter({level: logLevels[logtype]})
+                .run();
+        }
+    } else {
+        entries = await r
+            .table('logs')
+	    .limit(max_limit)
+            .filter({level: logLevels[logtype]})
+            .run();
+    }
+
+    ctx.status = 200;
+    ctx.body = entries;
+});
 
 // HTTP GET /logs/rethinkdb?min=etc&max=etc to get logs between dates
 router.get('/logs/rethinkdb', async ctx => {
