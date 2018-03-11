@@ -114,6 +114,46 @@ router.get('/logs/rethinkdb/loglevelstats', async ctx => {
     ctx.body = response;
 });
 
+// HTTP GET /logs/rethinkdb/loglevelstats?min=etc&max=etc to get stats of loglevels on daily aggregated basic
+router.get('/logs/rethinkdb/timestats', async ctx => {
+
+    const {min, max} = ctx.query;
+    let totalReq;
+    let response = {}
+
+    if (!min || !max)
+        ctx.throw(400, 'Must specify min and max in query string.');
+
+    const minDate = moment.utc(min, moment.ISO_8601);
+    const maxDate = moment.utc(max, moment.ISO_8601);
+
+    if (!minDate.isValid() || !maxDate.isValid())
+        ctx.throw(400, 'Min and max must be ISO 8601 date strings');
+
+    for (let i = 0; i < 100; i = i + 10) {
+        totalReq = await r
+            .table("logs")
+            .between(minDate.toDate(), maxDate.toDate(), {index: 'time'})
+            .filter(r.row("ms").coerceTo('number').le(i+10).and(r.row("ms").coerceTo('number').gt(i)))
+            .count()
+            .run();
+        let key = i + " - " + (i+10);
+        response[key] = totalReq;
+    }
+    
+    totalReq = await r
+        .table("logs")
+        .between(minDate.toDate(), maxDate.toDate(), {index: 'time'})
+        .filter((r.row("ms").coerceTo('number').gt(100)))
+        .count()
+        .run();
+    let key = " > 100";
+    response[key] = totalReq;
+
+    ctx.status = 200;
+    ctx.body = response;
+});
+
 // HTTP GET /logs/rethinkdb/loglevel?min=etc&max=etc&logtype=etc to get logs of a certain type between dates
 router.get('/logs/rethinkdb/loglevel', async ctx => {
 
