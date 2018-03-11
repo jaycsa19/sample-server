@@ -57,6 +57,63 @@ const router = new Router();
 
 app.use(logger());
 
+// HTTP GET /logs/rethinkdb/loglevelstats?min=etc&max=etc to get stats of loglevels on daily aggregated basic
+router.get('/logs/rethinkdb/loglevelstats', async ctx => {
+
+    const {min, max} = ctx.query;
+    let entries;
+    let response = {}
+
+    const logLevels = {
+        60: 'fatal',
+        50: 'error',
+        40: 'warn',
+        30: 'info',
+        20: 'debug',
+        10: 'trace'
+    };
+
+    if (min && max) {
+        const minDate = moment.utc(min, moment.ISO_8601);
+        const maxDate = moment.utc(max, moment.ISO_8601);
+        console.log(minDate);
+        console.log(maxDate);
+        if (!minDate.isValid() || !maxDate.isValid())
+            ctx.throw(400, 'Min and max must be ISO 8601 date strings');
+        else {
+            entries = await r
+                .table("logs")
+                .between(minDate.toDate(), maxDate.toDate(), {index: 'time'})
+                .group(r.row('time').day(),r.row('time').month(), r.row('time').year(), 'level')
+                .count()
+                .run();
+        }
+    } else {
+        entries = await r
+            .table("logs")
+            .group(r.row('time').day(), r.row('time').month(), r.row('time').year(), 'level')
+            .count()
+            .run();
+    }
+
+    //Converting it to readable customized response
+    entries.forEach(function (entry) {
+        let date = entry["group"][0] + "/" + entry["group"][1] + "/" + entry["group"][2];
+        let smallRes = {};
+        let data = []; 
+        if (date in response) {
+            data = response[date];
+        }
+        smallRes["level"] = logLevels[entry["group"][3]];
+        smallRes["count"] = entry["reduction"];
+        data.push(smallRes);
+        response[date] = data;
+    });
+
+    ctx.status = 200;
+    ctx.body = response;
+});
+
 // HTTP GET /logs/rethinkdb/loglevel?min=etc&max=etc&logtype=etc to get logs of a certain type between dates
 router.get('/logs/rethinkdb/loglevel', async ctx => {
 
